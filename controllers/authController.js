@@ -65,7 +65,7 @@ const authUser = async (req, res) => {
           email: username.includes('@') ? username : 'owner@biztracker.com',
           password: 'admin123',
           role: 'owner',
-          shopName: 'Ayyappa Super Mart'
+          shopName: 'Ramanjaneyulu Super Mart'
         });
       } else {
         return res.status(401).json({ message: 'Account not found. Please register first.' });

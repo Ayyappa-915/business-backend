@@ -23,17 +23,19 @@ const seedData = async () => {
     const users = [
       {
         id: 'owner',
-        name: 'G Bala Ayyappa',
+        name: 'Ramanjaneyulu',
         email: 'owner@biztracker.com',
         password: 'admin123',
-        role: 'owner'
+        role: 'owner',
+        shopName: 'Ramanjaneyulu Super Mart'
       },
       {
         id: 'cashier',
         name: 'Ravi Kumar',
         email: 'cashier@biztracker.com',
         password: 'staff123',
-        role: 'cashier'
+        role: 'cashier',
+        shopName: 'Ramanjaneyulu Super Mart'
       }
     ];
 
