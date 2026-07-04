@@ -62,4 +62,3 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 module.exports = app;
-mongodb+srv://22f01a0540_db_user:ramanjaneyulu_business_center@businesscluster.kcxaice.mongodb.net/
