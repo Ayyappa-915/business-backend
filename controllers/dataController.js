@@ -274,18 +274,24 @@ const createPurchase = async (req, res) => {
         if (product && product.hasSharedStock) {
           const allProductVariants = await Variant.find({ productId: product.id });
           const baseVariant = allProductVariants.find(v => v.conversionFactor === 1) || allProductVariants[0];
-          const qtyBase = item.quantity * variant.conversionFactor;
 
+          // 1. Calculate and update base cost first
+          const costPerBaseUnit = item.costPrice / (variant.conversionFactor || 1);
+          baseVariant.cost = parseFloat(costPerBaseUnit.toFixed(2));
+
+          // 2. Add purchased quantity (in base units) to base stock
+          const qtyBase = item.quantity * (variant.conversionFactor || 1);
           baseVariant.stock += qtyBase;
           await baseVariant.save();
 
+          // 3. Sync all other variants (stock and cost) relative to the base variant
+          const baseStock = baseVariant.stock * (baseVariant.conversionFactor || 1);
+          const baseCost = baseVariant.cost / (baseVariant.conversionFactor || 1);
+
           for (const other of allProductVariants) {
-            if (other.id === variant.id) {
-              other.cost = item.costPrice;
-            }
-            if (other.id !== baseVariant.id) {
-              other.stock = baseVariant.stock / other.conversionFactor;
-            }
+            const factor = other.conversionFactor || 1;
+            other.stock = baseStock / factor;
+            other.cost = parseFloat((baseCost * factor).toFixed(2));
             await other.save();
           }
         } else {
@@ -372,34 +378,58 @@ const createAdjustment = async (req, res) => {
                      product?.name.toLowerCase().includes('hen') ||
                      product?.name.toLowerCase().includes('live');
 
-      if (adj.type === 'add') {
-        if (isHens) {
-          variant.stock += adj.quantity;
-          // Scale weight stock proportionally if average weight is known
-          const avgWeight = variant.stock > 0 ? (variant.weightStock || 0) / (variant.stock - adj.quantity) : 2.25;
-          variant.weightStock = (variant.weightStock || 0) + (adj.quantity * avgWeight);
-        } else {
-          variant.stock += adj.quantity;
+      if (product && product.hasSharedStock) {
+        const allProductVariants = await Variant.find({ productId: product.id });
+        const baseVariant = allProductVariants.find(v => v.conversionFactor === 1) || allProductVariants[0];
+        
+        // Scale adjustment quantity to base units
+        const adjQtyBase = adj.quantity * (variant.conversionFactor || 1);
+
+        if (adj.type === 'add') {
+          baseVariant.stock += adjQtyBase;
+        } else if (adj.type === 'subtract') {
+          baseVariant.stock = Math.max(0, baseVariant.stock - adjQtyBase);
+        } else if (adj.type === 'set') {
+          baseVariant.stock = adjQtyBase;
         }
-      } else if (adj.type === 'subtract') {
-        if (isHens) {
-          variant.stock = Math.max(0, variant.stock - adj.quantity);
-          const avgWeight = (variant.stock + adj.quantity) > 0 ? (variant.weightStock || 0) / (variant.stock + adj.quantity) : 2.25;
-          variant.weightStock = Math.max(0, (variant.weightStock || 0) - (adj.quantity * avgWeight));
-        } else {
-          variant.stock = Math.max(0, variant.stock - adj.quantity);
+        await baseVariant.save();
+
+        // Sync other variants
+        const baseStock = baseVariant.stock * (baseVariant.conversionFactor || 1);
+        for (const other of allProductVariants) {
+          const factor = other.conversionFactor || 1;
+          other.stock = baseStock / factor;
+          await other.save();
         }
-      } else if (adj.type === 'set') {
-        if (isHens) {
-          const oldStock = variant.stock;
-          variant.stock = adj.quantity;
-          const avgWeight = oldStock > 0 ? (variant.weightStock || 0) / oldStock : 2.25;
-          variant.weightStock = adj.quantity * avgWeight;
-        } else {
-          variant.stock = adj.quantity;
+      } else {
+        if (adj.type === 'add') {
+          if (isHens) {
+            variant.stock += adj.quantity;
+            const avgWeight = variant.stock > 0 ? (variant.weightStock || 0) / (variant.stock - adj.quantity) : 2.25;
+            variant.weightStock = (variant.weightStock || 0) + (adj.quantity * avgWeight);
+          } else {
+            variant.stock += adj.quantity;
+          }
+        } else if (adj.type === 'subtract') {
+          if (isHens) {
+            variant.stock = Math.max(0, variant.stock - adj.quantity);
+            const avgWeight = (variant.stock + adj.quantity) > 0 ? (variant.weightStock || 0) / (variant.stock + adj.quantity) : 2.25;
+            variant.weightStock = Math.max(0, (variant.weightStock || 0) - (adj.quantity * avgWeight));
+          } else {
+            variant.stock = Math.max(0, variant.stock - adj.quantity);
+          }
+        } else if (adj.type === 'set') {
+          if (isHens) {
+            const oldStock = variant.stock;
+            variant.stock = adj.quantity;
+            const avgWeight = oldStock > 0 ? (variant.weightStock || 0) / oldStock : 2.25;
+            variant.weightStock = adj.quantity * avgWeight;
+          } else {
+            variant.stock = adj.quantity;
+          }
         }
+        await variant.save();
       }
-      await variant.save();
     }
 
     res.status(201).json(adj);
