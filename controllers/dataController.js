@@ -181,17 +181,14 @@ const createSale = async (req, res) => {
 
       if (product.hasSharedStock) {
         const allProductVariants = await Variant.find({ productId: product.id });
-        const baseVariant = allProductVariants.find(v => v.conversionFactor === 1) || allProductVariants[0];
-        const qtyBase = item.quantity * variant.conversionFactor;
+        if (allProductVariants.length > 0) {
+          const anyVar = allProductVariants[0];
+          const currentPool = (anyVar.stock || 0) * (anyVar.conversionFactor || 1);
+          const changeInPool = item.quantity * (variant.conversionFactor || 1);
+          const newPool = Math.max(0, currentPool - changeInPool);
 
-        // Deduct base stock
-        baseVariant.stock -= qtyBase;
-        await baseVariant.save();
-
-        // Sync other variants
-        for (const other of allProductVariants) {
-          if (other.id !== baseVariant.id) {
-            other.stock = baseVariant.stock / other.conversionFactor;
+          for (const other of allProductVariants) {
+            other.stock = newPool / (other.conversionFactor || 1);
             await other.save();
           }
         }
@@ -224,17 +221,14 @@ const deleteSale = async (req, res) => {
 
       if (product.hasSharedStock) {
         const allProductVariants = await Variant.find({ productId: product.id });
-        const baseVariant = allProductVariants.find(v => v.conversionFactor === 1) || allProductVariants[0];
-        const qtyBase = item.quantity * variant.conversionFactor;
+        if (allProductVariants.length > 0) {
+          const anyVar = allProductVariants[0];
+          const currentPool = (anyVar.stock || 0) * (anyVar.conversionFactor || 1);
+          const changeInPool = item.quantity * (variant.conversionFactor || 1);
+          const newPool = currentPool + changeInPool;
 
-        // Refund base stock
-        baseVariant.stock += qtyBase;
-        await baseVariant.save();
-
-        // Sync others
-        for (const other of allProductVariants) {
-          if (other.id !== baseVariant.id) {
-            other.stock = baseVariant.stock / other.conversionFactor;
+          for (const other of allProductVariants) {
+            other.stock = newPool / (other.conversionFactor || 1);
             await other.save();
           }
         }
@@ -273,26 +267,20 @@ const createPurchase = async (req, res) => {
 
         if (product && product.hasSharedStock) {
           const allProductVariants = await Variant.find({ productId: product.id });
-          const baseVariant = allProductVariants.find(v => v.conversionFactor === 1) || allProductVariants[0];
+          if (allProductVariants.length > 0) {
+            const anyVar = allProductVariants[0];
+            const currentPool = (anyVar.stock || 0) * (anyVar.conversionFactor || 1);
+            const changeInPool = item.quantity * (variant.conversionFactor || 1);
+            const newPool = currentPool + changeInPool;
 
-          // 1. Calculate and update base cost first
-          const costPerBaseUnit = item.costPrice / (variant.conversionFactor || 1);
-          baseVariant.cost = parseFloat(costPerBaseUnit.toFixed(2));
+            const baseCost = item.costPrice / (variant.conversionFactor || 1);
 
-          // 2. Add purchased quantity (in base units) to base stock
-          const qtyBase = item.quantity * (variant.conversionFactor || 1);
-          baseVariant.stock += qtyBase;
-          await baseVariant.save();
-
-          // 3. Sync all other variants (stock and cost) relative to the base variant
-          const baseStock = baseVariant.stock * (baseVariant.conversionFactor || 1);
-          const baseCost = baseVariant.cost / (baseVariant.conversionFactor || 1);
-
-          for (const other of allProductVariants) {
-            const factor = other.conversionFactor || 1;
-            other.stock = baseStock / factor;
-            other.cost = parseFloat((baseCost * factor).toFixed(2));
-            await other.save();
+            for (const other of allProductVariants) {
+              const factor = other.conversionFactor || 1;
+              other.stock = newPool / factor;
+              other.cost = parseFloat((baseCost * factor).toFixed(2));
+              await other.save();
+            }
           }
         } else {
           // Independent stock
@@ -333,15 +321,14 @@ const deletePurchase = async (req, res) => {
 
         if (product && product.hasSharedStock) {
           const allProductVariants = await Variant.find({ productId: product.id });
-          const baseVariant = allProductVariants.find(v => v.conversionFactor === 1) || allProductVariants[0];
-          const qtyBase = item.quantity * variant.conversionFactor;
+          if (allProductVariants.length > 0) {
+            const anyVar = allProductVariants[0];
+            const currentPool = (anyVar.stock || 0) * (anyVar.conversionFactor || 1);
+            const changeInPool = item.quantity * (variant.conversionFactor || 1);
+            const newPool = Math.max(0, currentPool - changeInPool);
 
-          baseVariant.stock -= qtyBase;
-          await baseVariant.save();
-
-          for (const other of allProductVariants) {
-            if (other.id !== baseVariant.id) {
-              other.stock = baseVariant.stock / other.conversionFactor;
+            for (const other of allProductVariants) {
+              other.stock = newPool / (other.conversionFactor || 1);
               await other.save();
             }
           }
@@ -380,26 +367,24 @@ const createAdjustment = async (req, res) => {
 
       if (product && product.hasSharedStock) {
         const allProductVariants = await Variant.find({ productId: product.id });
-        const baseVariant = allProductVariants.find(v => v.conversionFactor === 1) || allProductVariants[0];
-        
-        // Scale adjustment quantity to base units
-        const adjQtyBase = adj.quantity * (variant.conversionFactor || 1);
+        if (allProductVariants.length > 0) {
+          const anyVar = allProductVariants[0];
+          const currentPool = (anyVar.stock || 0) * (anyVar.conversionFactor || 1);
+          const changeInPool = adj.quantity * (variant.conversionFactor || 1);
+          
+          let newPool = currentPool;
+          if (adj.type === 'add') {
+            newPool = currentPool + changeInPool;
+          } else if (adj.type === 'subtract') {
+            newPool = Math.max(0, currentPool - changeInPool);
+          } else if (adj.type === 'set') {
+            newPool = changeInPool;
+          }
 
-        if (adj.type === 'add') {
-          baseVariant.stock += adjQtyBase;
-        } else if (adj.type === 'subtract') {
-          baseVariant.stock = Math.max(0, baseVariant.stock - adjQtyBase);
-        } else if (adj.type === 'set') {
-          baseVariant.stock = adjQtyBase;
-        }
-        await baseVariant.save();
-
-        // Sync other variants
-        const baseStock = baseVariant.stock * (baseVariant.conversionFactor || 1);
-        for (const other of allProductVariants) {
-          const factor = other.conversionFactor || 1;
-          other.stock = baseStock / factor;
-          await other.save();
+          for (const other of allProductVariants) {
+            other.stock = newPool / (other.conversionFactor || 1);
+            await other.save();
+          }
         }
       } else {
         if (adj.type === 'add') {
