@@ -168,6 +168,7 @@ const deleteUnit = async (req, res) => {
 const createSale = async (req, res) => {
   try {
     const sale = new Sale(req.body);
+    sale.saleDate = new Date().toISOString();
     await sale.save();
 
     // Deduct stock levels atomically
@@ -249,6 +250,10 @@ const deleteSale = async (req, res) => {
 const createPurchase = async (req, res) => {
   try {
     const purchase = new Purchase(req.body);
+    purchase.purchaseDate = new Date().toISOString();
+    if (purchase.type === 'prepared' && !purchase.targetSalesDate) {
+      purchase.targetSalesDate = purchase.purchaseDate;
+    }
     await purchase.save();
 
     // Exchanged items update stock levels
@@ -355,6 +360,7 @@ const deletePurchase = async (req, res) => {
 const createAdjustment = async (req, res) => {
   try {
     const adj = new StockAdjustment(req.body);
+    adj.date = new Date().toISOString();
     await adj.save();
 
     const variant = await Variant.findOne({ id: adj.variantId });
